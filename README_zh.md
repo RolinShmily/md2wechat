@@ -4,7 +4,7 @@
 
 <div align="center">
 
-[![npm](https://img.shields.io/npm/v/@rolinshmily/md2wechat?style=flat&logo=npm&logoColor=white)](https://www.npmjs.com/package/@rolinshmily/md2wechat)
+[![npm](https://img.shields.io/npm/v/@rol1n/md2wechat?style=flat&logo=npm&logoColor=white)](https://www.npmjs.com/package/@rol1n/md2wechat)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-339933?style=flat&logo=node.js&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -36,7 +36,7 @@
 ### 方式一：npm 全局安装（推荐）
 
 ```bash
-npm install -g @rolinshmily/md2wechat
+npm install -g @rol1n/md2wechat
 md2wechat --help
 # 也可使用短命令
 md2wx --help
@@ -47,7 +47,7 @@ md2wx --help
 ### 方式二：直接运行，不安装
 
 ```bash
-npx @rolinshmily/md2wechat check
+npx @rol1n/md2wechat check
 ```
 
 > 注意：每次 `npx` 可能重新解析版本；定时任务请使用全局安装或仓库构建方式。

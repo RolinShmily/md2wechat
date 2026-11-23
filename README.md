@@ -4,7 +4,7 @@
 
 <div align="center">
 
-[![npm](https://img.shields.io/npm/v/@rolinshmily/md2wechat?style=flat&logo=npm&logoColor=white)](https://www.npmjs.com/package/@rolinshmily/md2wechat)
+[![npm](https://img.shields.io/npm/v/@rol1n/md2wechat?style=flat&logo=npm&logoColor=white)](https://www.npmjs.com/package/@rol1n/md2wechat)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-339933?style=flat&logo=node.js&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -45,7 +45,7 @@ Highlights:
 ### Option 1: global npm install (recommended)
 
 ```bash
-npm install -g @rolinshmily/md2wechat
+npm install -g @rol1n/md2wechat
 md2wechat --help
 # short alias
 md2wx --help
@@ -56,7 +56,7 @@ Requires **Node.js >= 20**. `sharp` installs a prebuilt binary for your platform
 ### Option 2: run without installing
 
 ```bash
-npx @rolinshmily/md2wechat check
+npx @rol1n/md2wechat check
 ```
 
 > `npx` may re-resolve the package per invocation. For scheduled jobs, prefer a

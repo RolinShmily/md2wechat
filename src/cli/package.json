@@ -1,5 +1,5 @@
 {
-  "name": "@rolinshmily/md2wechat",
+  "name": "@rol1n/md2wechat",
   "version": "0.2.0",
   "description": "Automated Markdown static blog formatter & incremental sync CLI for WeChat Official Account Draft Box",
   "license": "MIT",

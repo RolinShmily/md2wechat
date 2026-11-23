@@ -39,11 +39,11 @@ pnpm test
 ```bash
 pnpm --filter @md2wechat/sync-core build
 pnpm --filter @md2wechat/renderer test
-pnpm --filter @rolinshmily/md2wechat build
+pnpm --filter @rol1n/md2wechat build
 
 # 单个测试文件
 pnpm --filter @md2wechat/sync-core exec tsx --test test/sync-core.test.ts
-pnpm --filter @rolinshmily/md2wechat exec tsx --test test/cli.test.ts
+pnpm --filter @rol1n/md2wechat exec tsx --test test/cli.test.ts
 ```
 
 ### 2.3 CLI 自检序列
@@ -68,7 +68,7 @@ src/wechat-sdk/src/         微信 API
 ```
 
 - 文件名使用 kebab-case；类型/类使用 PascalCase；函数/变量 camelCase。
-- 内部包统一 `@md2wechat/*`，发布包为 `@rolinshmily/md2wechat`。
+- 内部包统一 `@md2wechat/*`，发布包为 `@rol1n/md2wechat`。
 - 所有相对 import 带 `.js` 扩展名（NodeNext ESM）。
 
 ## 4. 编码规范
@@ -186,7 +186,7 @@ npm pack --dry-run
 
 ```bash
 tmp=$(mktemp -d)
-npm install -g --prefix "$tmp" ./rolinshmily-md2wechat-1.0.0.tgz
+npm install -g --prefix "$tmp" ./rol1n-md2wechat-0.2.0.tgz
 "$tmp/bin/md2wechat" --help
 ```
 
@@ -219,8 +219,8 @@ md2wechat sync
 - 发布前需要把根目录的 `README.md`、`README_zh.md`、`LICENSE`、
   `THIRD_PARTY_NOTICES.md`、`config.yaml.example` 复制到 `src/cli/`。
   `src/cli` 的 `prepack` 脚本（`scripts/sync-cli-docs.mjs`）会自动完成。
-- 发布后验证：`npm view @rolinshmily/md2wechat version`、
-  `npx @rolinshmily/md2wechat --help`。
+- 发布后验证：`npm view @rol1n/md2wechat version`、
+  `npx @rol1n/md2wechat --help`。
 
 ## 9. 提交规范
 
@@ -239,7 +239,7 @@ md2wechat sync
 确认依赖包已构建且 `types` 指向 `dist/index.d.ts`；必要时先跑一次 `pnpm -r build`。
 
 **CLI 测试失败，提示 dist/index.js 不存在**
-`pnpm --filter @rolinshmily/md2wechat build` 后再跑测试。
+`pnpm --filter @rol1n/md2wechat build` 后再跑测试。
 
 **`sharp` 报 `Could not load the "sharp" module`**
 安装时 install script 被跳过或平台包缺失。重新安装 `sharp` 或执行
