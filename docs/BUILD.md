@@ -209,16 +209,16 @@ md2wechat sync
 
 - 版本号只在 `src/cli/package.json` 维护；tag 格式 `vX.Y.Z`。
 - 推送 tag 会触发 `.github/workflows/release.yml`：构建、测试、`npm pack`、创建 GitHub
-  Release。**npm 发布步骤默认关闭**（`vars.NPM_PUBLISH` 为空时跳过），避免在未配置
-  Trusted Publishing 时误触发。
-- 配置好 npm Trusted Publishing 后，在仓库 Settings → Secrets and variables → Actions
-  → Variables 中添加 `NPM_PUBLISH=true`，再重跑该 tag 的 Release workflow 即可发布；
-  也可以在本机手动执行 `npm publish`。
+  Release。该 workflow **不会**发布 npm。
+- npm 发布由独立的 `.github/workflows/publish.yml` 负责，必须手动触发：
+  Actions → Publish npm → Run workflow，并填写要发布的 tag（如 `v0.2.0`）。
+- 首次发布必须在本机手动完成，以创建 npm 包；之后在 npmjs.com 的包设置里配置
+  Trusted Publisher：Repository `RolinShmily/md2wechat`、Workflow `publish.yml`、
+  Environment 留空。之后即可通过 `publish.yml` 免 token 发布。
 - 发布使用 OIDC provenance，不需要长期 `NPM_TOKEN`。
 - 发布前需要把根目录的 `README.md`、`README_zh.md`、`LICENSE`、
   `THIRD_PARTY_NOTICES.md`、`config.yaml.example` 复制到 `src/cli/`。
-  `src/cli` 的 `prepack` 脚本（`scripts/sync-cli-docs.mjs`）会自动完成；
-  release workflow 也保留显式复制。
+  `src/cli` 的 `prepack` 脚本（`scripts/sync-cli-docs.mjs`）会自动完成。
 - 发布后验证：`npm view @rolinshmily/md2wechat version`、
   `npx @rolinshmily/md2wechat --help`。
 
