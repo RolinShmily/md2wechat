@@ -5,8 +5,8 @@ import { findGitRoot } from './git.js';
 /**
  * Resolves a local asset reference (from frontmatter or Markdown) to an absolute file path.
  *
- * Single source of truth shared by the WeChat and HeyBox pipelines, so both platforms
- * agree on how `image:`, relative image links and `{repoRoot}` / `{postDir}` tokens resolve.
+ * Single source of truth for the WeChat pipeline: `image:`, relative image links and
+ * `{repoRoot}` / `{postDir}` tokens all resolve through this function.
  *
  * Returns `null` for remote URLs, inline data URLs and references that cannot be found.
  */

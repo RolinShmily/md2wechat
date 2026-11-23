@@ -13,7 +13,29 @@ import {
   ImageProcessor,
   loadConfig,
 } from '../src/index.js';
-import { WeChatClient, MemoryTokenStore } from '@md2posts/wechat-sdk';
+import { WeChatClient, MemoryTokenStore } from '@md2wechat/wechat-sdk';
+
+// Local dummy credentials for dry-run tests. Never real account values.
+const TEST_APP_ID = 'wx1234567890abcdef';
+const TEST_APP_SECRET = 'unit-test-secret';
+
+/** loadConfig() no longer has an implicit default inside a temp directory. */
+function writeTestConfig(dir: string): string {  const cfgPath = path.join(dir, 'config.yaml');
+  fs.writeFileSync(
+    cfgPath,
+    [
+      'source:',
+      '  postsRoot: ./posts',
+      '  gitPull: false',
+      'wechat:',
+      '  appId: ""',
+      '  appSecret: ""',
+      '',
+    ].join('\n'),
+    'utf8'
+  );
+  return cfgPath;
+}
 
 test('normalizeWeChatTitle strips suffix tags right-to-left and truncates when needed', () => {
   const res1 = normalizeWeChatTitle('短标题');
@@ -88,7 +110,7 @@ test('ImageProcessor converts WebP to PNG/JPEG and keeps output under maxByteSiz
 });
 
 test('StateStore persists and reads post, image, and cover entries', () => {
-  const tmpFile = path.join(os.tmpdir(), `md2posts-state-test-${Date.now()}.json`);
+  const tmpFile = path.join(os.tmpdir(), `md2wechat-state-test-${Date.now()}.json`);
   try {
     const store = new StateStore(tmpFile);
     assert.deepEqual(store.getAllPosts(), {});
@@ -116,7 +138,7 @@ test('StateStore persists and reads post, image, and cover entries', () => {
 });
 
 test('SyncPipeline check(), preview(), and push() run cleanly with image cache', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-pipeline-test-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2wechat-pipeline-test-'));
   const tmpState = path.join(tmpDir, 'state.json');
 
   try {
@@ -144,7 +166,7 @@ draft: false
     );
     fs.writeFileSync(path.join(postDir, 'cover.png'), png1x1);
 
-    const config = loadConfig();
+    const config = loadConfig(writeTestConfig(tmpDir));
     config.source.postsRoot = tmpDir;
     config.source.gitPull = false;
     config.source.assetRoots = ['{postDir}'];
@@ -190,7 +212,7 @@ draft: false
 });
 
 test('preflight blocks runs with missing/placeholder credentials and allows dry runs', async () => {
-  const { checkWeChatCredentials, checkHeyBoxSession } = await import('../src/preflight.js');
+  const { checkWeChatCredentials } = await import('../src/preflight.js');
 
   const empty = checkWeChatCredentials('', false);
   assert.equal(empty.ready, false);
@@ -209,16 +231,10 @@ test('preflight blocks runs with missing/placeholder credentials and allows dry 
   assert.equal(oddAppId.ready, true, 'malformed appId must only warn, not block');
   assert.equal(oddAppId.warnings.length, 1);
 
-  const noSession = checkHeyBoxSession(false, '/tmp/none.json');
-  assert.equal(noSession.ready, false);
-  assert.ok(noSession.errors[0].includes('/tmp/none.json'));
-
-  assert.equal(checkHeyBoxSession(true).ready, true);
-
   // Real runs must abort before scanning; dry runs must never be blocked.
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-preflight-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2wechat-preflight-'));
   try {
-    const cfg = loadConfig();
+    const cfg = loadConfig(writeTestConfig(tmpDir));
     cfg.source.postsRoot = tmpDir;
     cfg.source.gitPull = false;
     cfg.sync.stateFile = path.join(tmpDir, 'state.json');
@@ -226,7 +242,7 @@ test('preflight blocks runs with missing/placeholder credentials and allows dry 
 
     const realPipeline = new SyncPipeline(cfg, new WeChatClient({ appId: '', appSecret: '' }));
     await assert.rejects(
-      () => realPipeline.sync({ to: 'wechat' }),
+      () => realPipeline.sync(),
       /凭据未就绪/,
       'missing credentials must abort the run before pushing anything'
     );
@@ -235,85 +251,20 @@ test('preflight blocks runs with missing/placeholder credentials and allows dry 
       cfg,
       new WeChatClient({ appId: '', appSecret: '', dryRun: true })
     );
-    const dryReport = await dryPipeline.sync({ to: 'wechat', dryRun: true });
+    const dryReport = await dryPipeline.sync({ dryRun: true });
     assert.equal(dryReport.scanned, 0);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
 
-test('resolveTargets isolates platforms: a missing credential never blocks the other', async () => {
-  const { resolveTargets } = await import('../src/preflight.js');
-  const ok = { ready: true, errors: [], warnings: [] };
-  const bad = { ready: false, errors: ['no session'], warnings: [] };
-
-  // --to all, HeyBox session missing -> WeChat still runs
-  const allWechatOnly = resolveTargets('all', { wechat: ok, heybox: bad });
-  assert.equal(allWechatOnly.blocked, false);
-  assert.equal(allWechatOnly.effective, 'wechat');
-  assert.deepEqual(allWechatOnly.skipped.map((s) => s.target), ['heybox']);
-
-  // --to all, WeChat creds missing -> HeyBox still runs
-  const allHeyboxOnly = resolveTargets('all', { wechat: bad, heybox: ok });
-  assert.equal(allHeyboxOnly.effective, 'heybox');
-  assert.deepEqual(allHeyboxOnly.skipped.map((s) => s.target), ['wechat']);
-
-  // --to all, both ready -> both run
-  const bothReady = resolveTargets('all', { wechat: ok, heybox: ok });
-  assert.equal(bothReady.effective, 'all');
-  assert.equal(bothReady.skipped.length, 0);
-
-  // --to all, both unusable -> blocked
-  const noneReady = resolveTargets('all', { wechat: bad, heybox: bad });
-  assert.equal(noneReady.blocked, true);
-
-  // Single target still blocks when that target is unusable
-  assert.equal(resolveTargets('wechat', { wechat: bad, heybox: ok }).blocked, true);
-
-  // Single target is unaffected by the other platform being unusable
-  const single = resolveTargets('wechat', { wechat: ok, heybox: bad });
-  assert.equal(single.blocked, false);
-  assert.equal(single.effective, 'wechat');
-  assert.equal(single.skipped.length, 0);
-});
-
-test('pipeline keeps WeChat working when HeyBox session is unavailable', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-isolate-'));
-  try {
-    const cfg = loadConfig();
-    cfg.source.postsRoot = tmpDir;
-    cfg.source.gitPull = false;
-    cfg.sync.stateFile = path.join(tmpDir, 'state.json');
-    cfg.wechat = { appId: 'wx1234567890abcdef', appSecret: 'test_secret' };
-    cfg.heybox = { sessionFile: path.join(tmpDir, 'no-such-session.json') };
-
-    // NOTE: a real (non-dry) client, so preflight actually evaluates WeChat.
-    const pipeline = new SyncPipeline(
-      cfg,
-      new WeChatClient({
-        appId: 'wx1234567890abcdef',
-        appSecret: 'test_secret',
-      })
-    );
-
-    // HeyBox is unusable here (no session file). A `--to all` run must NOT throw,
-    // because WeChat is ready — it degrades to WeChat only.
-    const report = await pipeline.sync({ to: 'all' });
-    assert.equal(report.failed.length, 0);
-    assert.equal(report.scanned, 0);
-  } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  }
-});
-
 test('config.yaml wins over environment variables for credentials and webhook', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-envperf-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2wechat-envperf-'));
   const cfgPath = path.join(tmpDir, 'config.yaml');
   fs.writeFileSync(
     cfgPath,
     [
       'source:',
-      '  type: fs',
       '  gitPull: false',
       'wechat:',
       '  appId: "wx1111111111111111"',
@@ -327,11 +278,11 @@ test('config.yaml wins over environment variables for credentials and webhook', 
   const saved = {
     appId: process.env.WECHAT_APPID,
     secret: process.env.WECHAT_SECRET,
-    hook: process.env.MD2POSTS_WEBHOOK_URL,
+    hook: process.env.MD2WECHAT_WEBHOOK_URL,
   };
   process.env.WECHAT_APPID = 'wx9999999999999999';
   process.env.WECHAT_SECRET = 'env-secret-value';
-  process.env.MD2POSTS_WEBHOOK_URL = 'https://example.com/from-env';
+  process.env.MD2WECHAT_WEBHOOK_URL = 'https://example.com/from-env';
 
   try {
     const cfg = loadConfig(cfgPath);
@@ -342,11 +293,12 @@ test('config.yaml wins over environment variables for credentials and webhook', 
     // Empty config value falls back to the environment.
     fs.writeFileSync(
       cfgPath,
-      ['source:', '  type: fs', 'wechat:', '  appId: ""', '  appSecret: ""', ''].join('\n')
+      ['source:', '  gitPull: false', 'wechat:', '  appId: ""', '  appSecret: ""', ''].join('\n')
     );
     const fallback = loadConfig(cfgPath);
     assert.equal(fallback.wechat.appId, 'wx9999999999999999');
     assert.equal(fallback.wechat.appSecret, 'env-secret-value');
+    assert.equal(fallback.notify?.webhookUrl, 'https://example.com/from-env');
   } finally {
     const restore = (key: string, value?: string) => {
       if (value === undefined) delete process.env[key];
@@ -354,13 +306,13 @@ test('config.yaml wins over environment variables for credentials and webhook', 
     };
     restore('WECHAT_APPID', saved.appId);
     restore('WECHAT_SECRET', saved.secret);
-    restore('MD2POSTS_WEBHOOK_URL', saved.hook);
+    restore('MD2WECHAT_WEBHOOK_URL', saved.hook);
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
 
 test('sync refuses to push when this machine has no baseline', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-baseline-guard-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2wechat-baseline-guard-'));
   const postDir = path.join(tmpDir, 'post-a');
   fs.mkdirSync(postDir);
 
@@ -375,39 +327,39 @@ test('sync refuses to push when this machine has no baseline', async () => {
   );
 
   try {
-    const cfg = loadConfig();
+    const cfg = loadConfig(writeTestConfig(tmpDir));
     cfg.source.postsRoot = tmpDir;
     cfg.source.gitPull = false;
     cfg.source.assetRoots = ['{postDir}'];
     cfg.sync.stateFile = path.join(tmpDir, 'state.json');
     cfg.sync.defaultCover = path.join(postDir, 'cover.png');
-    cfg.wechat = { appId: 'wx1234567890abcdef', appSecret: 'test_secret' };
+    cfg.wechat = { appId: TEST_APP_ID, appSecret: TEST_APP_SECRET };
 
     const makePipeline = () =>
       new SyncPipeline(
         cfg,
-        new WeChatClient({ appId: 'wx1234567890abcdef', appSecret: 'test_secret', dryRun: true })
+        new WeChatClient({ appId: TEST_APP_ID, appSecret: TEST_APP_SECRET, dryRun: true })
       );
 
     // Empty state + pending article -> must abort with actionable guidance.
     await assert.rejects(
-      () => makePipeline().sync({ to: 'wechat' }),
+      () => makePipeline().sync(),
       /尚无同步基线/,
       'a fresh machine must not silently push articles already published elsewhere'
     );
 
     // Explicit opt-in is allowed.
-    const opted = await makePipeline().sync({ to: 'wechat', allowInitialPush: true, dryRun: true });
+    const opted = await makePipeline().sync({ allowInitialPush: true, dryRun: true });
     assert.equal(opted.failed.length, 0);
 
     // Dry runs only warn.
-    const dry = await makePipeline().sync({ to: 'wechat', dryRun: true });
+    const dry = await makePipeline().sync({ dryRun: true });
     assert.equal(dry.failed.length, 0);
 
     // After a baseline exists, normal sync is allowed without the flag.
     const withBaseline = makePipeline();
     await withBaseline.baseline();
-    const after = await withBaseline.sync({ to: 'wechat', dryRun: true });
+    const after = await withBaseline.sync({ dryRun: true });
     assert.equal(after.failed.length, 0);
     assert.equal(after.pushed.length, 0, 'baselined article must not be re-pushed');
   } finally {
@@ -416,7 +368,7 @@ test('sync refuses to push when this machine has no baseline', async () => {
 });
 
 test('StateStore.importFrom merges another machine baseline without overwriting', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-import-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2wechat-import-'));
   const stateFile = path.join(tmpDir, 'state.json');
 
   try {

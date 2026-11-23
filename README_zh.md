@@ -1,12 +1,12 @@
-<h1 align="center">md2posts</h1>
+<h1 align="center">md2wechat</h1>
 
-<h4 align="center">将 Markdown 静态博客文章自动排版并同步至多平台草稿箱（微信公众号 + 小黑盒 HeyBox）</h4>
+<h4 align="center">将 Markdown 静态博客文章自动排版并推送至微信公众号草稿箱</h4>
 
 <div align="center">
 
+[![npm](https://img.shields.io/npm/v/@rolinshmily/md2wechat?style=flat&logo=npm&logoColor=white)](https://www.npmjs.com/package/@rolinshmily/md2wechat)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-339933?style=flat&logo=node.js&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![pnpm](https://img.shields.io/badge/pnpm-workspace-F69220?style=flat&logo=pnpm&logoColor=white)](https://pnpm.io/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 [English](README.md) | [简体中文](README_zh.md)
@@ -17,172 +17,267 @@
 
 ## 项目简介
 
-**md2posts** 是一款专为技术博主打造的多平台内容同步工具。无需修改博客源仓库的任何文件，将本地或远程 Git 博客（Hugo、Hexo、Astro 等）的 Markdown 文章自动转码并推入草稿箱：
+**md2wechat** 是一个单平台（微信公众号）内容同步 CLI。它直接读取你的 Git 博客仓库（Hugo、Hexo、Astro 等），把 Markdown 文章转换为微信公众号编辑器可用的内联样式 HTML，并通过官方 Draft API 写入**草稿箱**——不会自动群发，也不修改博客源文件。
 
-| 发布平台 | 核心特性 | 解决痛点 |
-|---|---|---|
-| **微信公众号** (`wechat`) | 28 套内置排版主题、安全 Section 列表、代码块逐行高亮、外链转文末角标脚注、WebP 自适应压缩上传 | 彻底解决微信后台格式错乱、吞代码换行、图片超限问题 |
-| **小黑盒社区** (`heybox`) | **代码块分级渲染**（短命令转原生可复制终端块，长源码转深色卡片图）、表格转卡片图、封面插入正文顶部、**站外链接自动降级为纯文字**、支持直推草稿箱 | 解决移动端代码被拍扁、截图缩放不可读、图片重复，以及“外站引流”违规风险 |
+核心能力：
 
----
-
-## 文档
-
-| 文档 | 内容 |
-|---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 项目架构：分层与依赖、各包职责、关键数据流、平台约束背后的设计决策 |
-| [docs/BUILD.md](docs/BUILD.md) | 构建与开发规范：环境、命令、编码/依赖约定、测试策略与五步验证流程 |
+- **28 套内置排版主题**，安全 Section 列表、代码块逐行高亮、外链转文末脚注。
+- **增量同步**：以内容哈希为基线，只推送新文章；老文章修改不会被定时任务重复推送。
+- **空基线保护**：新机器 / 新 VPS 不会把历史文章误判为“新增”而批量推送。
+- **图片处理**：本地图片自动上传微信图床，WebP 自动转 PNG/JPEG 并控制体积。
+- **草稿更新**：重复 push 同一篇会更新原草稿（草稿被删除时自动降级为新建）。
+- **无头部署**：内置 `systemd install` 生成并启用定时器，适合 Linux VPS。
+- **失败可见**：凭据错误、IP 白名单、草稿接口未授权都会快速失败并以非 0 退出码结束。
 
 ---
 
-## 快速开始
+## 安装
 
-### 1. 安装与构建
+### 方式一：npm 全局安装（推荐）
 
-环境要求：**Node.js >= 20**，**pnpm >= 10**。
+```bash
+npm install -g @rolinshmily/md2wechat
+md2wechat --help
+# 也可使用短命令
+md2wx --help
+```
+
+要求 **Node.js >= 20**。`sharp` 会随平台安装预编译二进制。
+
+### 方式二：直接运行，不安装
+
+```bash
+npx @rolinshmily/md2wechat check
+```
+
+> 注意：每次 `npx` 可能重新解析版本；定时任务请使用全局安装或仓库构建方式。
+
+### 方式三：从源码构建
 
 ```bash
 pnpm install
 pnpm build
+pnpm cli --help
 ```
 
-### 2. 初始化配置文件
-
-复制模板并编辑你的博客路径与发布凭据：
-
-```bash
-cp config.yaml.example config.yaml
-nano config.yaml
-```
-
-**凭据怎么放**：凭据只写在 `config.yaml` 里（该文件已被 `.gitignore` 忽略，不会入库）。
-环境变量 `WECHAT_APPID` / `WECHAT_SECRET` 仅在对应字段留空时作为兜底——**配置文件优先**，
-安装脚本也不会创建任何 env 文件。
-
-```bash
-# 小黑盒：有图形界面时扫码一次，登录态保存到 heybox.sessionFile（默认 .cache/heybox-session.json）
-pnpm cli login --to heybox
-```
+`pnpm build` 会把 CLI 打包成单文件 ESM（仅 `sharp` 为外部依赖），产物位于
+`src/cli/dist/index.js`。
 
 ---
 
-## 常用 CLI 命令
+## 配置
 
-项目不提供全局命令，唯一入口是仓库根目录下的 `pnpm cli <command>`（首次使用需先 `pnpm install && pnpm build`）。
-systemd 定时任务内部也调用同一份 CLI 代码，只是用 node 绝对路径，避免依赖 PATH。
+按以下顺序查找配置文件，首个命中的生效：
+
+1. `-c / --config <path>`
+2. 环境变量 `MD2WECHAT_CONFIG`
+3. 当前目录 `./config.yaml`
+4. 用户级 `~/.config/md2wechat/config.yaml`
+5. 系统级 `/etc/md2wechat/config.yaml`
+
+初始化：
 
 ```bash
-# 1. 扫描博客状态（零网络请求，区分【新增待推】与【历史已修改】）
-pnpm cli check
+# 用户级
+mkdir -p ~/.config/md2wechat
+cp config.yaml.example ~/.config/md2wechat/config.yaml
 
-# 2. 本地离线排版预览（无需网络凭据，双击 preview.html 即可在浏览器一键复制富文本）
-pnpm cli preview my-post --to wechat      # 微信公众号手机框预览
-pnpm cli preview my-post --to heybox      # 小黑盒发布包预览（代码块/表格/封面）
-
-# 3. 按需单篇或批量推送（失败会以退出码 1 结束）
-pnpm cli push my-post --to wechat         # 推送单篇至微信公众号草稿箱
-pnpm cli push my-post --to heybox         # 推送单篇至小黑盒草稿箱
-pnpm cli push my-post --to all            # 单命令一键双端推送
-pnpm cli push -i --dry-run                # 进入终端交互式勾选列表模拟演练
-
-# 4. 每日定时增量同步（默认只推送新发表文章，不刷屏历史修改）
-pnpm cli sync --to all                    # 增量推送新文章到全部平台
-pnpm cli sync --dry-run                   # 演练：只走流程，不发写请求
-
-# 5. 同步基线（回答“哪些文章已经推过”）
-pnpm cli baseline                         # 把当前全部已发布文章标记为“已推过”
-pnpm cli baseline --status                # 查看基线文件位置/篇数/建立时间（只读，不联网）
-pnpm cli baseline --import state.json     # 从其他机器搬运基线（合并，不覆盖本机记录）
+# 或系统级（systemd 部署推荐）
+sudo mkdir -p /etc/md2wechat
+sudo cp config.yaml.example /etc/md2wechat/config.yaml
+sudo chmod 600 /etc/md2wechat/config.yaml
 ```
 
-### 同步基线（baseline）是什么、在哪
+最少需要填写：
 
-基线就是 `sync.stateFile`（默认 `./state.json`，相对 `config.yaml` 所在目录）。它记录每篇文章的
-`contentHash`、平台草稿 ID 与图片缓存，用来判断**哪些文章已经推送过**。
+```yaml
+source:
+  repoUrl: "https://github.com/you/your-blog.git"
+  postsPath: "content/posts"
 
-- 它是**机器本地**的，不随 Git 仓库同步。新克隆的 VPS 上它是空的，此时所有文章都会被当成“新增”。
-- 为防止误推，**空基线 + 存在待推文章时 `sync` 会直接中止**并给出指引：
+site:
+  url: "https://blog.example.com"
 
-  ```
-  [Baseline] 本机尚无同步基线，但检测到 61 篇待推送文章，已中止以避免误推。
-  1) 若这些文章此前已在别处推送过：先建立基线 —— `pnpm cli baseline`，或把原机器的 state.json 复制过来；
-  2) 若这是一批确实需要推送的新文章：加 `--initial-push` 明确同意；
-  3) 只想先看看会推什么：`pnpm cli check`。
-  ```
-- 多机场景：`baseline --import` 把一台机器的 `state.json` 合并到另一台即可共享“已推过”认知。
+sync:
+  defaultCover: "{repoRoot}/public/og/og.png"
+
+wechat:
+  appId: "wx..."
+  appSecret: "..."
+```
+
+完整字段说明见 [docs/configuration.md](docs/configuration.md)。
+
+### 凭据放置
+
+- 凭据写在 `config.yaml` 的 `wechat.appId` / `wechat.appSecret`（文件已被 `.gitignore` 忽略）。
+- 环境变量 `WECHAT_APPID` / `WECHAT_SECRET` 仅在配置字段留空时兜底；**配置文件优先**。
+- 不要把 AppSecret 写进命令行参数、镜像或日志。
+
+### 状态文件在哪
+
+`sync.stateFile` 记录“哪些文章已经推过”和图片缓存，默认位置：
+
+| 运行场景 | 默认路径 |
+|---|---|
+| root / systemd / 已存在 `/etc/md2wechat` | `/var/lib/md2wechat/state.json` |
+| 普通本地用户 | `~/.local/share/md2wechat/state.json` |
+
+该文件是**机器本地**的，不随 Git 同步。换机器时可用
+`md2wechat baseline --import <state.json>` 搬运，或重新建立基线。
 
 ---
 
-## 无桌面 Linux VPS 部署指南
-
-### 1. 解决小黑盒无桌面扫码问题
-
-VPS 通常没有图形桌面，最省事的做法是**把本地登录态和基线一起搬过去**：
+## 常用命令
 
 ```bash
-# 步骤 1：在有屏幕的本地电脑上扫码一次（登录态写入 heybox.sessionFile，默认 .cache/heybox-session.json）
-pnpm cli login --to heybox
+# 0. 诊断微信 API、出口 IP 白名单与草稿接口权限（只读）
+md2wechat diagnose
 
-# 步骤 2：把登录态与同步基线一并传到 VPS 的同一仓库目录
-scp ~/Projects/md2posts/.cache/heybox-session.json user@vps:~/md2posts/.cache/heybox-session.json
-scp ~/Projects/md2posts/state.json                user@vps:~/md2posts/state.json
+# 1. 扫描博客状态（零微信请求，区分【新增待推】与【历史已修改】）
+md2wechat check
 
-# 步骤 3：在 VPS 上确认
-cd ~/md2posts
-pnpm cli baseline --status        # 应显示已记录 61 篇等信息
+# 2. 本地离线排版预览（无需凭据，打开 HTML 可一键复制富文本）
+md2wechat preview my-post
+md2wechat preview my-post -t klein -o /tmp/preview.html
+
+# 3. 按需单篇或批量推送（失败以退出码 1 结束）
+md2wechat push my-post
+md2wechat push post-a post-b --dry-run
+md2wechat push                 # 交互式勾选
+md2wechat push -i --filter hugo
+
+# 4. 增量同步（默认只推新文章，受 maxPerRun 限制）
+md2wechat sync
+md2wechat sync --dry-run
+md2wechat sync --include-updated
+
+# 5. 同步基线
+md2wechat baseline              # 把当前已发布文章标记为基线
+md2wechat baseline --status     # 查看基线位置与篇数
+md2wechat baseline --import /path/to/state.json
+
+# 6. 主题列表
+md2wechat themes
 ```
 
-> 若没有本地基线可搬，也可以直接在 VPS 上 `pnpm cli baseline` 就地建立（不联网、不调平台接口），
-> 这样 `sync` 就不会把历史文章当成新文章重推。
+### 同步基线（baseline）
 
-### 1.5 凭据放在哪
+`baseline` 把“当前博客里已发布的文章”记为已处理，不会访问微信（除非显式使用
+`--remote` 去匹配后台草稿）。典型场景：
 
-- 微信 AppID/AppSecret 与小黑盒 `sessionFile` 都写在 `config.yaml`，**配置文件优先**；
-  环境变量仅在对应字段留空时兜底。
-- 安装脚本**不会**创建 `/etc/md2posts/md2posts.env`；旧版本遗留的该文件已不再被读取，可安全删除。
+- **首次在已有博客上使用**：先 `md2wechat baseline`，避免把历史文章全推一遍。
+- **新 VPS**：复制原机器的 `state.json`，或 `baseline --import`，或重新 baseline。
+- **确实要把当前所有文章作为首批推送**：`md2wechat sync --initial-push`。
 
-### 2. 安装 systemd 定时任务（每日自动检查并推流）
-
-```bash
-# 一键安装后台定时服务（自动检测用户环境 PATH、Node、flock 与 config.yaml）
-bash systemd/install-systemd.sh
-
-# 查看定时器状态与运行日志
-systemctl status md2posts-sync.timer
-journalctl -u md2posts-sync.service -n 50 -f
-
-# 卸载服务（按需）
-# 卸载（按需）
-bash systemd/uninstall-systemd.sh [--purge]
-```
-
-定时任务会打印同步基线与凭据预检结果；**只要有文章推送失败，服务就以退出码 1 结束**，
-`systemctl status` 会显示 `failed`，便于发现“看起来跑完其实全失败”的情况。
+空基线且存在待推文章时，`sync` 会中止并打印处理建议；这是防误推保护，不是故障。
 
 ---
 
-## 项目架构与子包
+## systemd 定时同步（Linux）
 
-```text
-md2posts/
-├── src/
-│   ├── wechat-sdk/     # 微信公众平台 API Client（Token 管理、素材上传、草稿箱，零运行时依赖）
-│   ├── heybox-sdk/     # 小黑盒 SDK（文章转换、代码/表格卡片、封面、推流发布）
-│   ├── renderer/       # Markdown 渲染与 AST 预处理（28 套精美主题）
-│   ├── sources/        # 博客扫描、复合 SHA-256、共享资产解析器
-│   ├── sync-core/      # 同步编排、状态存储、图片缓存与通知
-│   └── cli/            # 终端命令行交互入口
-├── docs/               # 架构与构建开发文档
-├── systemd/            # Linux 定时后台服务套件
-└── config.yaml.example # 配置文件模板
+```bash
+# 首次运行会自动生成 /etc/md2wechat/config.yaml 模板并退出；
+# 编辑配置后再次执行即可安装。
+sudo md2wechat systemd install
+
+# 自定义检查周期（默认 24h）
+sudo md2wechat systemd install --interval 6h
+
+# 只打印将要写入的 unit 文件，不落盘、不调用 systemctl
+md2wechat systemd install --dry-run
+
+# 查看状态与日志
+systemctl status md2wechat-sync.timer
+journalctl -u md2wechat-sync.service -n 50 -f
+
+# 立即运行一次
+sudo systemctl start md2wechat-sync.service
+
+# 卸载（保留配置与状态）
+sudo md2wechat systemd uninstall
+
+# 卸载并清理 /etc/md2wechat 与 /var/lib/md2wechat
+sudo md2wechat systemd uninstall --purge
 ```
 
-依赖关系与各包边界见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+安装器会：
+
+- 写入 `/etc/systemd/system/md2wechat-sync.service` 与 `.timer`；
+- 以执行 `sudo` 的用户身份运行（`SUDO_USER`），而不是 root；
+- 自动创建状态目录并修正属主；
+- 用 `flock` 防止并发运行；
+- 执行 `systemctl daemon-reload` 并 `enable --now` 定时器。
+
+首次启动会克隆博客仓库到状态目录下的 `blog-repo/`，因此请确保该目录有足够磁盘空间。
+
+---
+
+## 无桌面 Linux VPS 注意事项
+
+1. **微信 IP 白名单**：公众号后台「设置与开发 → 基本配置 → IP 白名单」必须加入 VPS 的**出口 IP**。
+   运行 `md2wechat diagnose` 可直接看到当前出口 IP 与 `40164` 错误提示。
+2. **个人订阅号限制**：部分个人号没有草稿箱接口权限（`48001`）。此时 `diagnose` 会明确提示，
+   请改用 `md2wechat preview` 生成 HTML 后手动粘贴到公众号后台。
+3. **时区**：systemd 定时器按系统时区运行；如需固定时区，可在 unit 中设置
+   `Environment="TZ=Asia/Shanghai"`（安装后可手动编辑 service）。
+4. **凭据权限**：`/etc/md2wechat/config.yaml` 建议 `600`，安装器会自动设置。
+
+---
+
+## 通知（可选）
+
+配置 `notify.webhookUrl` 或环境变量 `MD2WECHAT_WEBHOOK_URL` 后，同步成功/失败会发送
+文本通知，支持飞书、企业微信、钉钉和通用 JSON 接收端。
+
+```bash
+export MD2WECHAT_WEBHOOK_URL="https://open.feishu.cn/open-apis/bot/v2/hook/..."
+```
+
+systemd 安装器不会主动写入该环境变量；需要时请编辑 service 文件或通过配置文件的
+`notify.webhookUrl` 设置。
+
+---
+
+## 项目结构
+
+```
+src/
+├── cli/          # 命令行入口；tsup 打包为单文件 ESM
+├── renderer/     # Markdown → 微信内联样式 HTML（内置 Vendor: md-wechat）
+├── sources/      # 博客文章发现、Git 拉取、资源解析
+├── sync-core/    # 配置、增量状态、图片处理、草稿推送编排
+└── wechat-sdk/   # 微信 access_token / 素材 / 草稿 API 客户端
+```
+
+详细分层与数据流见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，构建与测试规范见
+[docs/BUILD.md](docs/BUILD.md)。
+
+---
+
+## 常见问题
+
+**`40164 invalid ip`**
+VPS 出口 IP 不在公众号白名单。把 `diagnose` 显示的 IP 加入后台白名单后重试。
+
+**`48001 api unauthorized`**
+账号未获得草稿箱接口权限（常见于个人订阅号）。使用 `preview` 手动粘贴。
+
+**`本机尚无同步基线`**
+先 `md2wechat baseline`，或复制/导入原机器的 `state.json`；确属首次推送时加
+`--initial-push`。
+
+**图片上传失败 / 正文图片缺失**
+检查本地图片路径与 `source.assetRoots`；外链图片需允许 `downloadRemoteImages`。
+
+**`sharp` 安装失败**
+确认 Node 版本 >= 20，并让 npm 正常执行 `sharp` 的安装脚本（它需要下载平台预编译包）。
 
 ---
 
 ## 致谢与许可
 
-- 微信排版渲染核心（`renderer/vendor/`）移植自 [laogou717/md-wechat](https://github.com/laogou717/md-wechat)（MIT 许可证）。
-- 小黑盒社区交互与发帖设计参考自 [AaronZ345/xiaoheihe-cli](https://github.com/AaronZ345/xiaoheihe-cli)（MIT 许可证，特别感谢原作者及维护者的开源贡献）。
-- 本项目基于 MIT 许可证开源。
+- 微信内联排版与主题核心（`src/renderer/vendor/`）来自
+  [laogou717/md-wechat](https://github.com/laogou717/md-wechat)，MIT License。
+  完整声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+- 本项目采用 [MIT License](LICENSE)。

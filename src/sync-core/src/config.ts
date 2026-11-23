@@ -2,9 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import YAML from 'yaml';
-import type { FsSourceOptions } from '@md2posts/sources';
+import type { FsSourceOptions } from '@md2wechat/sources';
 
 export interface AppConfig {
+  /** Absolute path of the config file that was actually used. */
+  configPath: string;
   source: FsSourceOptions;
   site: {
     url: string;
@@ -26,8 +28,6 @@ export interface AppConfig {
     appendCopyrightCard: boolean;
   };
   sync: {
-    target?: 'wechat' | 'heybox' | 'all';
-    platforms?: ('wechat' | 'heybox')[];
     stateFile: string;
     maxPerRun: number;
     syncUpdated: boolean;
@@ -40,17 +40,59 @@ export interface AppConfig {
     appId: string;
     appSecret: string;
   };
-  heybox?: {
-    sessionFile?: string;
-    browserChannel?: 'chrome' | 'msedge';
-    headless?: boolean;
-    codeBlockMode?: 'auto' | 'terminal' | 'image';
-  };
   notify?: {
     webhookUrl?: string;
     onSuccess?: boolean;
     onFailure?: boolean;
   };
+}
+
+const CONFIG_SEARCH_HINT = [
+  '未找到 md2wechat 配置文件。按以下优先级查找均未命中：',
+  '  1) 命令行 -c / --config <path>',
+  '  2) 环境变量 MD2WECHAT_CONFIG',
+  '  3) 当前目录 ./config.yaml',
+  '  4) 用户级 ~/.config/md2wechat/config.yaml',
+  '  5) 系统级 /etc/md2wechat/config.yaml',
+  '',
+  '初始化方式：',
+  '  sudo mkdir -p /etc/md2wechat',
+  '  sudo curl -fsSL https://raw.githubusercontent.com/RolinShmily/md2wechat/main/config.yaml.example \\',
+  '    -o /etc/md2wechat/config.yaml',
+  '  或直接复制仓库内的 config.yaml.example 到上述任一位置。',
+].join('\n');
+
+/**
+ * Resolves the config file path using the documented discovery order.
+ * Explicit and environment paths must exist; an implicit search failing is fatal.
+ */
+export function resolveConfigPath(explicit?: string): string {
+  if (explicit) {
+    const resolved = path.resolve(explicit);
+    if (!fs.existsSync(resolved)) {
+      throw new Error(`配置文件不存在: ${resolved}`);
+    }
+    return resolved;
+  }
+
+  const envPath = (process.env.MD2WECHAT_CONFIG || '').trim();
+  if (envPath) {
+    const resolved = path.resolve(envPath);
+    if (!fs.existsSync(resolved)) {
+      throw new Error(`环境变量 MD2WECHAT_CONFIG 指向的配置文件不存在: ${resolved}`);
+    }
+    return resolved;
+  }
+
+  const candidates = [
+    path.resolve(process.cwd(), 'config.yaml'),
+    path.join(os.homedir(), '.config', 'md2wechat', 'config.yaml'),
+    '/etc/md2wechat/config.yaml',
+  ];
+  const found = candidates.find((candidate) => fs.existsSync(candidate));
+  if (found) return found;
+
+  throw new Error(CONFIG_SEARCH_HINT);
 }
 
 function resolveConfigRelativePath(targetPath: string, baseDir: string): string {
@@ -63,6 +105,21 @@ function resolveConfigRelativePath(targetPath: string, baseDir: string): string 
     return trimmed;
   }
   return path.isAbsolute(trimmed) ? trimmed : path.resolve(baseDir, trimmed);
+}
+
+/**
+ * Default state location, decoupled from the install directory:
+ * - root / systemd / an existing /etc/md2wechat -> /var/lib/md2wechat/state.json
+ * - normal local user -> ~/.local/share/md2wechat/state.json
+ */
+function defaultStateFile(): string {
+  const systemContext =
+    process.getuid?.() === 0 ||
+    Boolean(process.env.INVOCATION_ID) ||
+    fs.existsSync('/etc/md2wechat');
+  return systemContext
+    ? '/var/lib/md2wechat/state.json'
+    : path.join(os.homedir(), '.local', 'share', 'md2wechat', 'state.json');
 }
 
 function loadEnvFile(envPath: string): void {
@@ -88,50 +145,28 @@ function loadEnvFile(envPath: string): void {
       }
     }
   } catch {
-    // Ignore unreadable env files
+    // Ignore unreadable env files.
   }
 }
 
 export function loadConfig(configPath?: string): AppConfig {
-  let resolvedPath = configPath
-    ? path.resolve(configPath)
-    : path.resolve(process.cwd(), 'config.yaml');
-
-  if (!configPath && !fs.existsSync(resolvedPath)) {
-    const canonicalExample = path.resolve(process.cwd(), 'config.yaml.example');
-    const legacyExample = path.resolve(process.cwd(), 'config.example.yaml');
-    if (fs.existsSync(canonicalExample)) {
-      resolvedPath = canonicalExample;
-    } else if (fs.existsSync(legacyExample)) {
-      resolvedPath = legacyExample;
-    }
-  }
+  const resolvedPath = resolveConfigPath(configPath);
   const configDir = path.dirname(resolvedPath);
 
-  // Optionally load a repo-local .env (never auto-created). config.yaml remains authoritative;
-  // see the credential resolution below.
+  // Optionally load a config-dir .env (never auto-created). config.yaml remains authoritative.
   loadEnvFile(path.join(configDir, '.env'));
   loadEnvFile(path.resolve(process.cwd(), '.env'));
 
-  let rawYaml = '';
   let parsed: any = {};
-  if (fs.existsSync(resolvedPath)) {
-    rawYaml = fs.readFileSync(resolvedPath, 'utf8');
-    try {
-      parsed = YAML.parse(rawYaml) || {};
-    } catch (err: any) {
-      console.warn(`[配置警告] 配置文件 ${resolvedPath} 解析失败 (YAML 语法/缩进错误): ${err.message}`);
-      console.warn(`           建议重新执行 \`cp config.yaml.example config.yaml\` 进行重置。\n`);
-      parsed = {};
-    }
+  try {
+    const rawYaml = fs.readFileSync(resolvedPath, 'utf8');
+    parsed = YAML.parse(rawYaml) || {};
+  } catch (err: any) {
+    throw new Error(`配置文件 ${resolvedPath} 解析失败 (YAML 语法/缩进错误): ${err.message}`);
   }
 
   // Credential resolution: config.yaml is authoritative; environment variables are only a
-  // fallback for values left empty in the file.
-  //
-  // Rationale: the env file under /etc/md2posts is installation scaffolding that may hold
-  // leftover placeholders. Letting it win silently overrides a correct config.yaml and
-  // surfaces as an unrelated `40013 invalid appid`. Explicit config beats ambient env.
+  // fallback for values left empty in the file. Explicit config beats ambient env.
   const configAppId = String(parsed.wechat?.appId || '').trim();
   const configAppSecret = String(parsed.wechat?.appSecret || '').trim();
   const envAppId = (process.env.WECHAT_APPID || '').trim();
@@ -159,29 +194,51 @@ export function loadConfig(configPath?: string): AppConfig {
   const rawRepoUrl = parsed.source?.repoUrl ? String(parsed.source.repoUrl).trim() : undefined;
   const rawGitRemote = parsed.source?.gitRemote || parsed.source?.remote || 'origin';
   const rawGitBranch = parsed.source?.gitBranch || parsed.source?.branch || 'main';
-  const rawPostsPath = parsed.source?.postsPath || 'content/posts';
-  const rawGitPull = Boolean(parsed.source?.gitPull ?? rawRepoUrl); // 若配置了 repoUrl 则默认开启拉取
+  const rawPostsPath = String(parsed.source?.postsPath || 'content/posts')
+    .trim()
+    .replace(/^[/\\]+|[/\\]+$/g, '');
+  const rawGitPull = Boolean(parsed.source?.gitPull ?? rawRepoUrl);
   const rawPostsRoot = parsed.source?.postsRoot || parsed.source?.root;
   const rawRepoRoot = parsed.source?.repoRoot;
-  const rawStateFile = parsed.sync?.stateFile || './state.json';
+  const rawStateFile = parsed.sync?.stateFile;
   const rawDefaultCover = parsed.sync?.defaultCover;
   const rawAssetRoots: string[] = Array.isArray(parsed.source?.assetRoots)
     ? parsed.source.assetRoots
     : ['{postDir}', '{repoRoot}/public'];
 
-  const siteUrl = (parsed.site?.url || 'https://blog.example.com').replace(/\/+$/, '');
+  const siteUrl = String(parsed.site?.url || 'https://blog.example.com').replace(/\/+$/, '');
+
+  const stateFile = rawStateFile
+    ? resolveConfigRelativePath(String(rawStateFile), configDir)
+    : defaultStateFile();
+
+  // Keep a remote blog clone next to the state file, not next to the caller's cwd:
+  // systemd starts with cwd=/ and the install directory may be read-only.
+  const repoRoot = rawRepoRoot
+    ? resolveConfigRelativePath(String(rawRepoRoot), configDir)
+    : rawRepoUrl
+    ? path.join(path.dirname(stateFile), 'blog-repo')
+    : undefined;
+
+  const postsRoot = rawPostsRoot
+    ? resolveConfigRelativePath(String(rawPostsRoot), configDir)
+    : repoRoot
+    ? path.join(repoRoot, rawPostsPath)
+    : undefined;
 
   return {
+    configPath: resolvedPath,
     source: {
-      postsRoot: rawPostsRoot ? resolveConfigRelativePath(rawPostsRoot, configDir) : undefined,
+      postsRoot,
       postsPath: rawPostsPath,
-      repoRoot: rawRepoRoot ? resolveConfigRelativePath(rawRepoRoot, configDir) : undefined,
+      repoRoot,
       repoUrl: rawRepoUrl,
       gitRemote: String(rawGitRemote).trim(),
       gitBranch: String(rawGitBranch).trim(),
       layout: parsed.source?.layout || 'bundle',
-      assetRoots: rawAssetRoots.map((r) => resolveConfigRelativePath(String(r), configDir)),
+      assetRoots: rawAssetRoots.map((root) => resolveConfigRelativePath(String(root), configDir)),
       gitPull: rawGitPull,
+      pullInterval: parsed.source?.pullInterval || '24h',
       sortOrder: (parsed.source?.sortOrder as 'asc' | 'desc') || 'asc',
       siteUrl,
       postPathPattern: parsed.site?.postPath || '/posts/{slug}/',
@@ -207,13 +264,7 @@ export function loadConfig(configPath?: string): AppConfig {
       appendCopyrightCard: parsed.render?.appendCopyrightCard !== false,
     },
     sync: {
-      target: (parsed.sync?.target || 'wechat').toLowerCase(),
-      platforms: Array.isArray(parsed.sync?.platforms)
-        ? parsed.sync.platforms
-        : (parsed.sync?.target || 'wechat') === 'all'
-        ? ['wechat', 'heybox']
-        : [(parsed.sync?.target || 'wechat') as 'wechat' | 'heybox'],
-      stateFile: resolveConfigRelativePath(rawStateFile, configDir),
+      stateFile,
       maxPerRun: parsed.sync?.maxPerRun || 5,
       syncUpdated: Boolean(parsed.sync?.syncUpdated),
       defaultCover: rawDefaultCover
@@ -227,19 +278,9 @@ export function loadConfig(configPath?: string): AppConfig {
       appId,
       appSecret,
     },
-    heybox: {
-      sessionFile: parsed.heybox?.sessionFile
-        ? resolveConfigRelativePath(parsed.heybox.sessionFile, configDir)
-        : undefined,
-      browserChannel: parsed.heybox?.browserChannel,
-      headless: parsed.heybox?.headless !== false,
-      codeBlockMode: parsed.heybox?.codeBlockMode,
-    },
     notify: {
-      // config.yaml first, environment only as fallback (consistent with credentials).
       webhookUrl:
         (parsed.notify?.webhookUrl && String(parsed.notify.webhookUrl).trim()) ||
-        process.env.MD2POSTS_WEBHOOK_URL ||
         process.env.MD2WECHAT_WEBHOOK_URL ||
         undefined,
       onSuccess: parsed.notify?.onSuccess !== false,

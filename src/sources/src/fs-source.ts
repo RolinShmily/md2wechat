@@ -18,6 +18,42 @@ const execFileAsync = promisify(execFile);
 export { findGitRoot };
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.svg', '.gif']);
+const DEFAULT_PULL_INTERVAL = '24h';
+
+/**
+ * Parses durations like `30m`, `6h`, `1d`, `3600s` or a raw millisecond number.
+ */
+function parseDurationMs(value: string | number | undefined): number {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value >= 0 ? value : 24 * 60 * 60 * 1000;
+  }
+  if (!value) return 24 * 60 * 60 * 1000;
+
+  const match = String(value).trim().match(/^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d|w)?$/i);
+  if (!match) {
+    console.warn(`[FsSource] 无法解析 pullInterval "${value}"，回退为 ${DEFAULT_PULL_INTERVAL}`);
+    return 24 * 60 * 60 * 1000;
+  }
+  const amount = Number(match[1]);
+  const unit = (match[2] || 'ms').toLowerCase();
+  const multipliers: Record<string, number> = {
+    ms: 1,
+    s: 1000,
+    m: 60_000,
+    h: 3_600_000,
+    d: 86_400_000,
+    w: 604_800_000,
+  };
+  return amount * (multipliers[unit] ?? 1);
+}
+
+function formatElapsed(ms: number): string {
+  const minutes = Math.max(0, Math.round(ms / 60_000));
+  if (minutes < 60) return `${minutes} 分钟`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} 小时`;
+  return `${Math.round(hours / 24)} 天`;
+}
 
 /**
  * Resolves a potentially dotted field key (e.g. "cover.image") on a frontmatter object.
@@ -110,9 +146,14 @@ export class FsSource implements SourceAdapter {
   private readonly postPathPattern: string;
   private readonly fieldMapping: Required<FieldMapping>;
   private readonly sortOrder: 'asc' | 'desc';
+  private readonly pullIntervalMs: number;
+  private readonly pullIntervalLabel: string;
 
   constructor(options: FsSourceOptions) {
     this.sortOrder = options.sortOrder || 'asc';
+    this.pullIntervalMs = parseDurationMs(options.pullInterval);
+    this.pullIntervalLabel =
+      options.pullInterval === undefined ? DEFAULT_PULL_INTERVAL : String(options.pullInterval);
     this.repoUrl = options.repoUrl ? options.repoUrl.trim() : undefined;
     this.gitRemote = options.gitRemote ? options.gitRemote.trim() : 'origin';
     this.gitBranch = options.gitBranch ? options.gitBranch.trim() : 'main';
@@ -158,10 +199,11 @@ export class FsSource implements SourceAdapter {
    * Prepares the source repository before scanning.
    * If gitPull is enabled (default), ensures remote repository is cloned and pulled up to date.
    */
-  public async prepare(_options: PrepareOptions = {}): Promise<void> {
+  public async prepare(options: PrepareOptions = {}): Promise<void> {
     if (!this.gitPull) return;
 
     let targetDir = this.repoRoot;
+    let cloned = false;
 
     const hasGit = Boolean(targetDir && fs.existsSync(path.join(targetDir, '.git')));
 
@@ -178,6 +220,7 @@ export class FsSource implements SourceAdapter {
           cloneArgs.push('-b', this.gitBranch);
         }
         await execFileAsync('git', cloneArgs, { timeout: 120_000 });
+        cloned = true;
         console.log(`[Git] 远程仓库克隆完成！`);
       } catch (err: any) {
         throw new Error(`[FsSource] 从远程克隆 ${this.repoUrl} 失败: ${err.message}`);
@@ -198,6 +241,26 @@ export class FsSource implements SourceAdapter {
       );
     }
 
+    // A fresh clone is already up to date: record the pull time instead of pulling again.
+    if (cloned) {
+      options.onPullSuccess?.(new Date().toISOString());
+      return;
+    }
+
+    // Respect the configured pull cooldown so frequent `check` runs do not hit git every time.
+    if (!options.forcePull && options.lastPullAt && this.pullIntervalMs > 0) {
+      const lastMs = Date.parse(options.lastPullAt);
+      if (Number.isFinite(lastMs)) {
+        const elapsed = Date.now() - lastMs;
+        if (elapsed >= 0 && elapsed < this.pullIntervalMs) {
+          console.log(
+            `[Git] 距上次拉取仅 ${formatElapsed(elapsed)}（冷却周期 ${this.pullIntervalLabel}），跳过 git pull。`
+          );
+          return;
+        }
+      }
+    }
+
     try {
       const pullArgs = ['pull', '--ff-only', this.gitRemote, this.gitBranch];
       console.log(`[Git] 正在从远程拉取博客仓库最新更新 (${this.gitRemote}/${this.gitBranch}) ...`);
@@ -205,6 +268,7 @@ export class FsSource implements SourceAdapter {
         cwd: targetDir,
         timeout: 30_000,
       });
+      options.onPullSuccess?.(new Date().toISOString());
     } catch (err: any) {
       console.warn(`[Git] 提示: 远程拉取未成功 (${err.message})，使用本地最新版本继续同步。`);
     }

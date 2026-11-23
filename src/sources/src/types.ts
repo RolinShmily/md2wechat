@@ -28,16 +28,16 @@ export interface FieldMapping {
 export interface FsSourceOptions {
   postsRoot?: string;             // 本地文章目录（若指定则优先使用）
   postsPath?: string;             // 仓库内文章相对路径，默认 'content/posts'
-  repoRoot?: string;              // 本地 Git 仓库目录（留空且配置了 repoUrl 时自动缓存在 .cache/blog-repo）
+  repoRoot?: string;              // 本地 Git 仓库目录（留空且配置了 repoUrl 时默认克隆到 <状态目录>/blog-repo）
   repoUrl?: string;               // 远程 Git 仓库 URL（默认远程拉取）
   gitRemote?: string;             // 远端名称，默认 'origin'
   gitBranch?: string;             // 目标分支，默认 'main' 或当前分支
-  pullInterval?: string | number; // 自动拉取冷却周期（如 '24h', '1d', 默认 '24h'，一天内不重复拉取）
+  pullInterval?: string | number; // 自动拉取冷却周期（如 '24h', '1d', 默认 '24h'，冷却期内不重复拉取）
   layout?: 'bundle' | 'flat';     // default: 'bundle' (slug/index.md)
   assetRoots?: string[];          // default: ['{postDir}', '{repoRoot}/public']
-  gitPull?: boolean;              // default: true (默认从远程拉取最新更新)
+  gitPull?: boolean;              // default: true (配置了 repoUrl 时)
   sortOrder?: 'asc' | 'desc';     // default: 'asc' (正序：第 1 篇/最早文章排在序号 1；'desc' 为最新文章排前面)
-  siteUrl?: string;               // default: 'https://blog.srprolin.com'
+  siteUrl?: string;               // default: 'https://blog.example.com'
   postPathPattern?: string;       // default: '/posts/{slug}/'
   fieldMapping?: FieldMapping;
 }

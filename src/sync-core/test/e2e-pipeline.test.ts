@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import http from 'node:http';
-import { WeChatClient, MemoryTokenStore } from '@md2posts/wechat-sdk';
+import { WeChatClient, MemoryTokenStore } from '@md2wechat/wechat-sdk';
 import { SyncPipeline, loadConfig, StateStore } from '../src/index.js';
 
 const PNG_1X1 = Buffer.from(
@@ -13,10 +13,16 @@ const PNG_1X1 = Buffer.from(
 );
 
 test('E2E Pipeline: baseline -> sync idempotency -> update -> 40007 fallback -> webhook notify', async (t) => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-e2e-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2wechat-e2e-'));
   const postsRoot = path.join(tmpDir, 'posts');
   const stateFile = path.join(tmpDir, 'state.json');
+  const cfgPath = path.join(tmpDir, 'config.yaml');
   fs.mkdirSync(postsRoot, { recursive: true });
+  fs.writeFileSync(
+    cfgPath,
+    ['source:', '  gitPull: false', 'wechat:', '  appId: ""', '  appSecret: ""', ''].join('\n'),
+    'utf8'
+  );
 
   // Track mock server API calls
   const apiCounters = {
@@ -120,7 +126,7 @@ test('E2E Pipeline: baseline -> sync idempotency -> update -> 40007 fallback -> 
   // 1. Create a historical post and run baseline()
   writePost('1-history-post', '2026-01-01', '# 历史章节\n\n![图](./shot.png)');
 
-  const config = loadConfig();
+  const config = loadConfig(cfgPath);
   config.source.postsRoot = postsRoot;
   config.source.gitPull = false;
   config.source.assetRoots = ['{postDir}'];
@@ -201,7 +207,7 @@ test('E2E Pipeline: baseline -> sync idempotency -> update -> 40007 fallback -> 
 });
 
 test('StateStore.withLock blocks concurrent writes from a live process', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-lock-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2wechat-lock-'));
   const stateFile = path.join(tmpDir, 'state.json');
 
   try {

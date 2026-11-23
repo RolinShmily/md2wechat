@@ -1,9 +1,9 @@
 /**
  * Preflight credential checks.
  *
- * Purpose: a headless/systemd run must fail fast and loudly when a target platform
- * has no usable credentials. Without this, every post fails with the same opaque API
- * error (e.g. WeChat `40013 invalid appid`), the run still exits 0, and systemd reports
+ * Purpose: a headless/systemd run must fail fast and loudly when WeChat has no usable
+ * credentials. Without this, every post fails with the same opaque API error
+ * (e.g. WeChat `40013 invalid appid`), the run still exits 0, and systemd reports
  * "Finished" — so nobody notices the whole sync was a no-op.
  */
 
@@ -29,8 +29,8 @@ function isPlaceholder(value: string): boolean {
 }
 
 const ENV_HINT =
-  '请在 config.yaml 的 wechat.appId / wechat.appSecret 填写后重启服务' +
-  '（systemctl restart md2posts-sync.timer）。也可用环境变量 WECHAT_APPID / WECHAT_SECRET ' +
+  '请在 config.yaml 的 wechat.appId / wechat.appSecret 填写后运行' +
+  ' `sudo systemctl start md2wechat-sync.service` 重试。也可用环境变量 WECHAT_APPID / WECHAT_SECRET ' +
   '作为兜底，但 config.yaml 优先级更高。';
 
 /**
@@ -59,63 +59,6 @@ export function checkWeChatCredentials(appId?: string, hasAppSecret = false): Cr
   }
 
   return { ready: errors.length === 0, errors, warnings };
-}
-
-/**
- * Validates that a usable HeyBox session exists.
- */
-export function checkHeyBoxSession(hasSession: boolean, sessionFile?: string): CredentialStatus {
-  if (hasSession) return { ready: true, errors: [], warnings: [] };
-
-  const where = sessionFile?.trim() || '(默认路径未找到)';
-  return {
-    ready: false,
-    errors: [
-      `未找到小黑盒登录凭据（期望位置: ${where}）。` +
-        '有桌面环境的机器上运行 `pnpm cli login --to heybox` 扫码，然后把 session.json 复制到该路径；' +
-        '或直接在该环境运行同一条命令完成浏览器登录。',
-    ],
-    warnings: [],
-  };
-}
-
-export type PlatformTarget = 'wechat' | 'heybox';
-
-export interface ResolvedTargets {
-  /** Target(s) that actually run, narrowed by credential readiness. */
-  effective: PlatformTarget | 'all';
-  /** Requested but unusable targets: skipped with a warning, not fatal. */
-  skipped: Array<{ target: PlatformTarget; status: CredentialStatus }>;
-  /** True when nothing can run (every requested target is unready). */
-  blocked: boolean;
-}
-
-/**
- * Narrows the requested target by credential readiness.
- *
- * A missing credential on one platform must never prevent the other platform from
- * syncing — only when *every* requested platform is unusable does the run abort.
- */
-export function resolveTargets(
-  requested: PlatformTarget | 'all',
-  statuses: Record<PlatformTarget, CredentialStatus>
-): ResolvedTargets {
-  const wanted: PlatformTarget[] =
-    requested === 'all' ? ['wechat', 'heybox'] : [requested];
-
-  const ready = wanted.filter((t) => statuses[t].ready);
-  const skipped = wanted
-    .filter((t) => !statuses[t].ready)
-    .map((t) => ({ target: t, status: statuses[t] }));
-
-  if (ready.length === 0) {
-    return { effective: requested === 'all' ? 'all' : requested, skipped, blocked: true };
-  }
-
-  const effective: PlatformTarget | 'all' =
-    ready.length === wanted.length ? requested : (ready[0] as PlatformTarget);
-
-  return { effective, skipped, blocked: false };
 }
 
 /**

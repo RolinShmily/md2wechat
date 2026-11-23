@@ -1,7 +1,8 @@
 {
-  "name": "@md2posts/sources",
+  "name": "@md2wechat/sources",
   "version": "0.1.0",
-  "description": "Article source adapters for md2posts",
+  "private": true,
+  "description": "Article source adapters for md2wechat",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

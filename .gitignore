@@ -1,6 +1,5 @@
 node_modules
 dist
-out
 *.tsbuildinfo
 .cache
 .env
@@ -13,4 +12,11 @@ state.json
 *.lock
 preview-*.html
 .playwright-mcp
+
+# Copied into the CLI package by scripts/sync-cli-docs.mjs before npm pack/publish.
+src/cli/README.md
+src/cli/README_zh.md
+src/cli/LICENSE
+src/cli/THIRD_PARTY_NOTICES.md
+src/cli/config.yaml.example
 

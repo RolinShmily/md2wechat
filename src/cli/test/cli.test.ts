@@ -18,7 +18,7 @@ const PNG_1X1 = Buffer.from(
 );
 
 test('CLI commands: themes, check, baseline, preview, and push --dry-run', async (t) => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2posts-cli-test-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'md2wechat-cli-test-'));
   const postsRoot = path.join(tmpDir, 'posts');
   const postDir = path.join(postsRoot, 'cli-demo');
   const configPath = path.join(tmpDir, 'config.yaml');
@@ -76,4 +76,20 @@ test('CLI commands: themes, check, baseline, preview, and push --dry-run', async
   ]);
   assert.match(pushOut.stdout, /推送成功/);
   assert.match(pushOut.stdout, /dry-run-draft-/);
+
+  // 5. systemd install --dry-run (never touches /etc or systemctl)
+  const systemdOut = await execFileAsync(process.execPath, [
+    cliEntry,
+    'systemd',
+    'install',
+    '--dry-run',
+    '--interval',
+    '6h',
+    '-c',
+    configPath,
+  ]);
+  assert.match(systemdOut.stdout, /md2wechat-sync\.service/);
+  assert.match(systemdOut.stdout, /md2wechat-sync\.timer/);
+  assert.match(systemdOut.stdout, /OnUnitActiveSec=6h/);
+  assert.match(systemdOut.stdout, /未写入文件/);
 });

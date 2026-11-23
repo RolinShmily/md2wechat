@@ -16,7 +16,6 @@ export async function sendSyncNotification(
 ): Promise<void> {
   const webhookUrl = (
     notifyConfig?.webhookUrl ||
-    process.env.MD2POSTS_WEBHOOK_URL ||
     process.env.MD2WECHAT_WEBHOOK_URL ||
     ''
   ).trim();
@@ -32,7 +31,7 @@ export async function sendSyncNotification(
     return;
   }
 
-  const lines: string[] = ['【md2posts 多平台草稿同步通知】'];
+  const lines: string[] = ['【md2wechat 草稿同步通知】'];
   if (hasPushed) {
     lines.push(`✅ 成功推入草稿箱 (${report.pushed.length} 篇)：`);
     for (const item of report.pushed) {
@@ -58,7 +57,7 @@ export async function sendSyncNotification(
     body = { msgtype: 'text', text: { content: text } };
   } else {
     body = {
-      event: 'md2posts_sync',
+      event: 'md2wechat_sync',
       text,
       pushedCount: report.pushed.length,
       failedCount: report.failed.length,

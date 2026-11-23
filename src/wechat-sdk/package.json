@@ -1,6 +1,7 @@
 {
-  "name": "@md2posts/wechat-sdk",
+  "name": "@md2wechat/wechat-sdk",
   "version": "0.1.0",
+  "private": true,
   "description": "Zero-dependency, standalone TypeScript WeChat Official Account API SDK",
   "type": "module",
   "main": "./dist/index.js",

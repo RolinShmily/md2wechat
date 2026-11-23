@@ -1,25 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { WeChatClient, WeChatError } from '@md2posts/wechat-sdk';
-import {
-  HeyBoxClient,
-  type HeyBoxPublishResult,
-  type HeyBoxPreparedResult,
-} from '@md2posts/heybox-sdk';
-import { renderArticle, preprocessMarkdown } from '@md2posts/renderer';
-import { FsSource, SourcePost, findGitRoot, resolveLocalAsset } from '@md2posts/sources';
+import { WeChatClient, WeChatError } from '@md2wechat/wechat-sdk';
+import { renderArticle, preprocessMarkdown } from '@md2wechat/renderer';
+import { FsSource, SourcePost, findGitRoot, resolveLocalAsset } from '@md2wechat/sources';
 import { StateStore } from './state-store.js';
 import { ImageProcessor } from './image-processor.js';
 import { normalizeWeChatTitle, normalizeWeChatDigest } from './normalize.js';
 import { sendSyncNotification } from './notifier.js';
-import {
-  checkWeChatCredentials,
-  checkHeyBoxSession,
-  formatCredentialFailure,
-  resolveTargets,
-  type CredentialStatus,
-  type PlatformTarget,
-} from './preflight.js';
+import { checkWeChatCredentials, formatCredentialFailure } from './preflight.js';
 import type { AppConfig } from './config.js';
 
 export interface CheckPostItem {
@@ -51,18 +39,14 @@ export interface PushResult {
   mediaId: string;
   isUpdate: boolean;
   warnings: string[];
-  wechat?: PushResult;
-  heybox?: HeyBoxPublishResult;
 }
 
 export interface PipelinePreviewResult {
   post: SourcePost;
-  target: 'wechat' | 'heybox';
   articleHtml?: string;
   fullPageHtml: string;
   warnings: string[];
   normalizedTitle: string;
-  heybox?: { bundleDir: string; prepared: HeyBoxPreparedResult };
 }
 
 export interface SyncReport {
@@ -95,13 +79,8 @@ export class SyncPipeline {
   private readonly stateStore: StateStore;
   private readonly imageProcessor: ImageProcessor;
   private readonly wechatClient: WeChatClient;
-  private readonly heyboxPublisher: HeyBoxClient;
 
-  constructor(
-    config: AppConfig,
-    wechatClient?: WeChatClient,
-    heyboxPublisher?: HeyBoxClient
-  ) {
+  constructor(config: AppConfig, wechatClient?: WeChatClient) {
     this.config = config;
     this.source = new FsSource(config.source);
     this.stateStore = new StateStore(config.sync.stateFile);
@@ -114,79 +93,30 @@ export class SyncPipeline {
         appId: config.wechat.appId,
         appSecret: config.wechat.appSecret,
       });
-    this.heyboxPublisher =
-      heyboxPublisher ||
-      new HeyBoxClient({
-        assetRoots: config.source.assetRoots,
-        defaultCoverPath: config.sync.defaultCover,
-        sessionFile: config.heybox?.sessionFile,
-        browserChannel: config.heybox?.browserChannel,
-        headless: config.heybox?.headless,
-        codeBlockMode: config.heybox?.codeBlockMode,
-        siteUrl: config.site.url,
-      });
   }
 
   /**
-   * Fails fast when a requested target has no usable credentials.
+   * Fails fast when WeChat credentials are unusable.
    *
    * Runs before scan/pull so a misconfigured host does not burn API calls per post,
    * and so the process exits non-zero (systemd then reports a failed unit instead of
-   * a successful no-op). Skipped for dry runs, which never touch the network.
+   * a successful no-op). Skipped for dry runs, which never authenticate.
    */
-  /**
-   * Resolves which platforms can actually run, based on credential readiness.
-   *
-   * A platform that is not ready is *skipped with a warning* so the other platform keeps
-   * syncing; the run only aborts when every requested platform is unusable. This keeps a
-   * missing HeyBox session from silently disabling WeChat (and vice versa).
-   */
-  private resolveReadyTargets(
-    target: PlatformTarget | 'all',
-    dryRun: boolean
-  ): PlatformTarget | 'all' {
-    // Dry runs never authenticate, so credentials cannot block them.
-    if (dryRun) return target;
+  private assertWeChatReady(dryRun: boolean): void {
+    if (dryRun || this.wechatClient.isDryRun) return;
 
-    const statuses: Record<PlatformTarget, CredentialStatus> = {
-      wechat: this.wechatClient.isDryRun
-        ? { ready: true, errors: [], warnings: [] }
-        : checkWeChatCredentials(
-            // Prefer the effective client (tests/programmatic use may inject one) over raw config.
-            this.config.wechat.appId || this.wechatClient.appId,
-            Boolean(this.config.wechat.appSecret) || this.wechatClient.hasAppSecret
-          ),
-      heybox: checkHeyBoxSession(
-        this.heyboxPublisher.hasSession(),
-        this.config.heybox?.sessionFile
-      ),
-    };
+    const status = checkWeChatCredentials(
+      // Prefer the effective client (tests/programmatic use may inject one) over raw config.
+      this.config.wechat.appId || this.wechatClient.appId,
+      Boolean(this.config.wechat.appSecret) || this.wechatClient.hasAppSecret
+    );
 
-    for (const t of ['wechat', 'heybox'] as PlatformTarget[]) {
-      for (const w of statuses[t].warnings) {
-        console.warn(`[Preflight] ${w}`);
-      }
+    for (const warning of status.warnings) {
+      console.warn(`[Preflight] ${warning}`);
     }
-
-    const resolved = resolveTargets(target, statuses);
-
-    if (resolved.blocked) {
-      const messages = resolved.skipped.map(({ target: t, status }) =>
-        formatCredentialFailure(t === 'wechat' ? '微信' : '小黑盒', status)
-      );
-      throw new Error(messages.join('\n'));
+    if (!status.ready) {
+      throw new Error(formatCredentialFailure('微信', status));
     }
-
-    for (const { target: t, status } of resolved.skipped) {
-      console.warn(
-        formatCredentialFailure(t === 'wechat' ? '微信' : '小黑盒', status).replace(
-          '已中止本次运行（未推送任何文章）',
-          '本次已跳过该平台，其他平台继续运行'
-        )
-      );
-    }
-
-    return resolved.effective;
   }
 
   public async prepare(options: { forcePull?: boolean } = {}): Promise<void> {
@@ -281,6 +211,7 @@ export class SyncPipeline {
       onlySlugs?: string[];
       beforeDate?: string;
       remote?: boolean;
+      forcePull?: boolean;
     } = {}
   ): Promise<{
     baselinedCount: number;
@@ -288,8 +219,12 @@ export class SyncPipeline {
     matchedPublishedCount: number;
     publishListUnauthorized: boolean;
   }> {
+    if (options.remote) {
+      this.assertWeChatReady(false);
+    }
+
     return await this.stateStore.withLock(async () => {
-      await this.prepare();
+      await this.prepare({ forcePull: options.forcePull });
       const posts = await this.source.scanPosts();
 
       if (options.remote) {
@@ -436,34 +371,14 @@ export class SyncPipeline {
   }
 
   /**
-   * Generates offline local preview for a post without external network requests.
-   * Supports target: 'wechat' (default) or 'heybox'.
+   * Generates an offline local preview for a post without external network requests.
    */
-  public async preview(
-    slug: string,
-    options: { to?: 'wechat' | 'heybox'; theme?: string; output?: string } = {}
-  ): Promise<PipelinePreviewResult> {
-    const target = (options.to || 'wechat').toLowerCase() as 'wechat' | 'heybox';
-
+  public async preview(slug: string, options: { theme?: string } = {}): Promise<PipelinePreviewResult> {
     const post = await this.source.getPost(slug);
     if (!post) {
       throw new Error(`[Pipeline] 未找到文章: ${slug}`);
     }
 
-    // 1. HeyBox Preview
-    if (target === 'heybox') {
-      const { bundleDir, prepared } = await this.heyboxPublisher.exportPackage(post, options.output);
-      return {
-        post,
-        target: 'heybox',
-        fullPageHtml: prepared.previewHtml,
-        warnings: [],
-        normalizedTitle: prepared.title,
-        heybox: { bundleDir, prepared },
-      };
-    }
-
-    // 2. WeChat Preview
     const { title: normTitle } = normalizeWeChatTitle(post.title);
     const assetRoots = this.config.source.assetRoots || ['{postDir}'];
 
@@ -595,7 +510,6 @@ export class SyncPipeline {
 
     return {
       post,
-      target: 'wechat',
       articleHtml: renderRes.html,
       fullPageHtml,
       warnings: renderRes.warnings.map((w) => w.detail),
@@ -604,15 +518,11 @@ export class SyncPipeline {
   }
 
   /**
-   * Pushes a single post to targeted platform(s): 'wechat' (default) | 'heybox' | 'all'.
+   * Pushes a single post to the WeChat Draft Box.
    */
   public async push(
     slug: string,
-    options: {
-      to?: 'wechat' | 'heybox' | 'all';
-      force?: boolean;
-      dryRun?: boolean;
-    } = {}
+    options: { force?: boolean; dryRun?: boolean } = {}
   ): Promise<PushResult> {
     return await this.stateStore.withLock(async () => {
       return await this.pushInternal(slug, options);
@@ -621,70 +531,16 @@ export class SyncPipeline {
 
   private async pushInternal(
     slug: string,
-    options: {
-      to?: 'wechat' | 'heybox' | 'all';
-      force?: boolean;
-      dryRun?: boolean;
-    } = {}
+    options: { force?: boolean; dryRun?: boolean } = {}
   ): Promise<PushResult> {
-    const targetPlatform = (options.to || this.config.sync.target || 'wechat').toLowerCase() as
-      | 'wechat'
-      | 'heybox'
-      | 'all';
-
-    const effectiveTarget = this.resolveReadyTargets(
-      targetPlatform,
-      Boolean(options.dryRun)
-    );
+    this.assertWeChatReady(Boolean(options.dryRun));
 
     const post = await this.source.getPost(slug);
     if (!post) {
       throw new Error(`[Pipeline] 未找到文章: ${slug}`);
     }
 
-    let wechatRes: PushResult | undefined;
-    let heyboxRes: HeyBoxPublishResult | undefined;
-
-    // 1. WeChat Push
-    if (effectiveTarget === 'wechat' || effectiveTarget === 'all') {
-      wechatRes = await this.pushToWeChat(post, options);
-    }
-
-    // 2. HeyBox Push
-    if (effectiveTarget === 'heybox' || effectiveTarget === 'all') {
-      heyboxRes = await this.pushToHeyBox(post, options);
-    }
-
-    const primaryMediaId = wechatRes?.mediaId || heyboxRes?.draftId || '';
-    const primaryTitle = wechatRes?.normalizedTitle || post.title;
-
-    return {
-      id: slug,
-      title: post.title,
-      normalizedTitle: primaryTitle,
-      mediaId: primaryMediaId,
-      isUpdate: wechatRes?.isUpdate ?? false,
-      warnings: wechatRes?.warnings ?? [],
-      wechat: wechatRes,
-      heybox: heyboxRes,
-    };
-  }
-
-  private async pushToHeyBox(
-    post: SourcePost,
-    options: { dryRun?: boolean } = {}
-  ): Promise<HeyBoxPublishResult> {
-    const res = await this.heyboxPublisher.publishDraft(post, { dryRun: options.dryRun });
-    if (!options.dryRun && res.draftId) {
-      const state = this.stateStore.getPost(post.id);
-      if (state) {
-        state.heyboxDraftId = res.draftId;
-        state.heyboxSyncedAt = new Date().toISOString();
-        this.stateStore.setPost(post.id, state);
-        this.stateStore.save();
-      }
-    }
-    return res;
+    return await this.pushToWeChat(post, options);
   }
 
   private async pushToWeChat(
@@ -825,8 +681,6 @@ export class SyncPipeline {
       draftMediaId: finalMediaId,
       status: 'synced',
       pushedAt: new Date().toISOString(),
-      heyboxDraftId: existingState?.heyboxDraftId,
-      heyboxSyncedAt: existingState?.heyboxSyncedAt,
     });
     this.stateStore.save();
 
@@ -841,12 +695,11 @@ export class SyncPipeline {
   }
 
   /**
-   * Synchronizes new articles (and optionally updated articles if includeUpdated is enabled) up to maxPerRun.
-   * By default, pushes to the target platform specified by `options.to` or `config.sync.target`.
+   * Synchronizes new articles (and optionally updated articles if includeUpdated is enabled)
+   * up to maxPerRun.
    */
   public async sync(
     options: {
-      to?: 'wechat' | 'heybox' | 'all';
       includeUpdated?: boolean;
       forcePull?: boolean;
       dryRun?: boolean;
@@ -855,10 +708,7 @@ export class SyncPipeline {
     } = {}
   ): Promise<SyncReport> {
     return await this.stateStore.withLock(async () => {
-      const requestedTarget = (options.to || this.config.sync.target || 'wechat') as
-        | PlatformTarget
-        | 'all';
-      const effectiveTarget = this.resolveReadyTargets(requestedTarget, Boolean(options.dryRun));
+      this.assertWeChatReady(Boolean(options.dryRun));
 
       await this.prepare({ forcePull: options.forcePull });
       const posts = await this.source.scanPosts();
@@ -898,10 +748,10 @@ export class SyncPipeline {
               `  状态文件: ${this.stateStore.filePath}`,
               '',
               '这说明该机器从未记录过"哪些文章已经推送过"（例如新克隆的 VPS）。请三选一：',
-              '  1) 若这些文章此前已在别处推送过：先建立基线 —— `pnpm cli baseline`，',
+              '  1) 若这些文章此前已在别处推送过：先建立基线 —— `md2wechat baseline`，',
               '     或把原机器的 state.json 复制到上面的路径；',
               '  2) 若这是一批确实需要推送的新文章：加 `--initial-push` 明确同意；',
-              '  3) 只想先看看会推什么：`pnpm cli check`。',
+              '  3) 只想先看看会推什么：`md2wechat check`。',
             ].join('\n')
           );
         }
@@ -916,7 +766,6 @@ export class SyncPipeline {
       for (const post of toProcess) {
         try {
           const res = await this.pushInternal(post.id, {
-            to: effectiveTarget,
             dryRun: options.dryRun,
           });
           pushed.push(res);

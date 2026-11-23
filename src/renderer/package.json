@@ -1,6 +1,7 @@
 {
-  "name": "@md2posts/renderer",
+  "name": "@md2wechat/renderer",
   "version": "0.1.0",
+  "private": true,
   "description": "Vendored and adapted md-wechat renderer with full preprocessing pipeline",
   "type": "module",
   "main": "./dist/index.js",

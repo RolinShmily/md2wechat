@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Enable npm Trusted Publishing
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify tag matches package version
+        run: |
+          node --input-type=module -e "
+            import fs from 'node:fs';
+            const pkg = JSON.parse(fs.readFileSync('src/cli/package.json', 'utf8'));
+            const tag = process.env.GITHUB_REF_NAME.replace(/^v/, '');
+            if (pkg.version !== tag) {
+              console.error('Tag ' + tag + ' does not match src/cli/package.json version ' + pkg.version);
+              process.exit(1);
+            }
+            console.log('Version ' + pkg.version + ' matches tag.');
+          "
+
+      - name: Build
+        run: pnpm build
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Copy root docs into the CLI package
+        run: |
+          cp README.md src/cli/README.md
+          cp README_zh.md src/cli/README_zh.md
+          cp LICENSE src/cli/LICENSE
+          cp THIRD_PARTY_NOTICES.md src/cli/THIRD_PARTY_NOTICES.md
+          cp config.yaml.example src/cli/config.yaml.example
+
+      - name: Verify package contents
+        working-directory: src/cli
+        run: npm pack --dry-run
+
+      - name: Publish to npm (Trusted Publishing / OIDC)
+        # Disabled by default: set the repository variable NPM_PUBLISH=true after
+        # configuring npm Trusted Publishing, then re-run the workflow.
+        if: ${{ vars.NPM_PUBLISH == 'true' }}
+        working-directory: src/cli
+        run: npm publish --provenance --access public
+
+      - name: Pack release artifact
+        working-directory: src/cli
+        run: npm pack
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            src/cli/*.tgz \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes
