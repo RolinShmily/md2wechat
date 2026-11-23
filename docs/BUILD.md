@@ -215,6 +215,8 @@ md2wechat sync
   `vX.Y.Z` 时不会发布。
 - `publish.yml` 仍保留 `workflow_dispatch`，仅用于 npm 临时故障后的手动重试；正常运行
   发版不需要在 Actions 页面手动触发。
+- 发布步骤是幂等的：如果 tag 对应版本已存在于 npm，工作流会跳过 `npm publish` 并正常
+  结束，重复运行 Release / Publish 不会因“版本已发布”而失败。
 - 首次发布必须在本机手动完成，以创建 npm 包；之后在 npmjs.com 的包设置里配置
   Trusted Publisher：Repository `RolinShmily/md2wechat`、Workflow `publish.yml`、
   Environment 留空。完成配置后，后续 Release 结束即可通过 `publish.yml` 免 token 自动发布。

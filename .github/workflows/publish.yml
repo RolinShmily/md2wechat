@@ -103,6 +103,21 @@ jobs:
         working-directory: src/cli
         run: npm pack --dry-run
 
+      - name: Check whether this version is already published
+        id: published
+        run: |
+          VERSION=$(node -p "require('./src/cli/package.json').version")
+          if npm view "@rol1n/md2wechat@$VERSION" version >/dev/null 2>/tmp/npm-view.err; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::@rol1n/md2wechat@$VERSION is already published; skipping npm publish."
+          elif grep -qE 'E404|404 Not Found' /tmp/npm-view.err; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          else
+            cat /tmp/npm-view.err >&2
+            exit 1
+          fi
+
       - name: Publish to npm (Trusted Publishing / OIDC)
+        if: steps.published.outputs.exists != 'true'
         working-directory: src/cli
         run: npm publish --provenance --access public
