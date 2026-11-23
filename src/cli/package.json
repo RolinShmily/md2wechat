@@ -26,8 +26,8 @@
   ],
   "type": "module",
   "bin": {
-    "md2wechat": "./dist/index.js",
-    "md2wx": "./dist/index.js"
+    "md2wechat": "dist/index.js",
+    "md2wx": "dist/index.js"
   },
   "files": [
     "dist",
