@@ -1,0 +1,27 @@
+name: Feature
+description: Propose a new capability, theme, or improvement
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        md2wechat only writes to the WeChat Draft Box. Proposals that require
+        automatic publishing, mass messaging, or bypassing account permissions
+        are out of scope.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem & proposal
+      description: What problem are you solving, and how should it work?
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Dependencies / platform notes (optional)
+      description: Any new package (with license), native binary, or platform requirement.
+    validations:
+      required: false

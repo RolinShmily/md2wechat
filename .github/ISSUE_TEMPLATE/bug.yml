@@ -1,0 +1,35 @@
+name: Bug
+description: Report broken behaviour or a regression
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Never paste your AppSecret, access_token, or full `state.json` contents.
+        Redact secrets and account IDs from logs before posting.
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps / command to reproduce
+      description: The exact `md2wechat` command, the relevant config shape (secrets redacted), and the post layout.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Expected vs actual behaviour
+      description: Include verbatim error output and the process exit code.
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment & diagnose output
+      description: OS, Node version (`node -v`), installed package version (`npm ls -g @rol1n/md2wechat`), and redacted `md2wechat diagnose` output.
+      render: shell
+    validations:
+      required: true
