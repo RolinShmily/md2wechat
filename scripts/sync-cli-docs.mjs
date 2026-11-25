@@ -11,9 +11,10 @@ const cliDir = path.join(root, 'src', 'cli');
 
 const files = [
   'README.md',
-  'README_zh.md',
+  'README.zh-CN.md',
+  'CHANGELOG.md',
   'LICENSE',
-  'THIRD_PARTY_NOTICES.md',
+  'THIRD_PARTY_NOTICES',
   'config.yaml.example',
 ];
 

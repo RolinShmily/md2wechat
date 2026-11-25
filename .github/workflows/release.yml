@@ -56,6 +56,9 @@ jobs:
         working-directory: src/cli
         run: npm pack --dry-run
 
+      - name: Extract release notes from CHANGELOG
+        run: node scripts/extract-changelog.mjs "$GITHUB_REF_NAME" > release-notes.md
+
       - name: Pack release artifact
         working-directory: src/cli
         run: npm pack
@@ -67,4 +70,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             src/cli/*.tgz \
             --title "$GITHUB_REF_NAME" \
-            --generate-notes
+            --notes-file release-notes.md
