@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-25
+
 ### Added
 
 - GitHub issue templates for bug reports and feature proposals.
@@ -69,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optional webhook notifications for Feishu, WeCom, DingTalk, and generic JSON
   endpoints.
 
-[Unreleased]: https://github.com/RolinShmily/md2wechat/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/RolinShmily/md2wechat/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/RolinShmily/md2wechat/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/RolinShmily/md2wechat/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/RolinShmily/md2wechat/releases/tag/v0.1.0

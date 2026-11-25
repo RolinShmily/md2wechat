@@ -195,7 +195,7 @@ npm pack --dry-run
 
 ```bash
 tmp=$(mktemp -d)
-npm install -g --prefix "$tmp" ./rol1n-md2wechat-0.2.0.tgz
+npm install -g --prefix "$tmp" ./rol1n-md2wechat-0.2.1.tgz
 "$tmp/bin/md2wechat" --help
 ```
 

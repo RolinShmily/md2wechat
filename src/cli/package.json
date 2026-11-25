@@ -1,6 +1,6 @@
 {
   "name": "@rol1n/md2wechat",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Automated Markdown static blog formatter & incremental sync CLI for WeChat Official Account Draft Box",
   "license": "MIT",
   "author": "RoL1n_SrP <github.com/RolinShmily>",
