@@ -1,4 +1,4 @@
-# 配置参考（Configuration）
+# 配置参考
 
 `md2wechat` 只读取一个 YAML 配置文件。命令行参数仅覆盖少量运行时选项（`--pull`、
 `--repo`、`--posts`、`--branch`、`--sort` 等），不会写回文件。
@@ -159,6 +159,8 @@ wechat:
 ```
 
 ## 6. systemd 安装时的配置
+
+完整的部署步骤、VPS 检查清单与通知配置见 [`deployment.md`](deployment.md)。
 
 `md2wechat systemd install` 固定使用 `/etc/md2wechat/config.yaml`（除非传入 `-c`）。
 若该文件不存在，会从安装包内复制 `config.yaml.example` 生成模板并提示你编辑；

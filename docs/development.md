@@ -1,4 +1,9 @@
-# 构建与开发规范（BUILD & DEV）
+# 开发指南（Development）
+
+配套文档：[`architecture.md`](architecture.md)（架构与数据流）、
+[`configuration.md`](configuration.md)（配置字段）、
+[`wechat-permissions.md`](wechat-permissions.md)（接口权限与错误码）、
+[`deployment.md`](deployment.md)（systemd / VPS 部署）。
 
 ## 1. 环境要求
 
@@ -77,7 +82,7 @@ src/wechat-sdk/src/         微信 API
 
 - TypeScript strict；避免 `any` 扩散，外部 API 响应可局部 `any` 但必须立即收窄。
 - 对外导出的函数写显式返回类型或用推断后的清晰结构。
-- 配置与状态字段变更必须同步更新 `config.yaml.example` 与文档。
+- 配置与状态字段变更必须同步更新 `config.yaml.example` 与 `docs/configuration.md`。
 
 ### 4.2 错误处理
 
@@ -100,8 +105,9 @@ src/wechat-sdk/src/         微信 API
 
 - 新增运行时依赖前先评估是否可用 Node 内置能力替代。
 - 发布包的**运行时依赖只有 `sharp`**（原生二进制，必须外部安装并保持 external）；
-  `highlight.js`、`markdown-it`、`markdown-it-mark`、`yaml` 及所有内部包都在构建期
+  `highlight.js`、`markdown-it`、`markdown-it-mark`、`yaml` 及其传递依赖都在构建期
   由 tsup 打进 `dist/index.js`，只作为 `devDependencies` 参与构建。
+- 打包内容或版本变化时，同步更新 `THIRD_PARTY_NOTICES` 中的 bundled 依赖清单。
 - 内部包保持 `private: true`，不单独发布。
 - 修改 `pnpm-lock.yaml` 必须来自 `pnpm install`，不要手改。
 - 安装依赖默认 `--ignore-scripts`；需要原生构建的包需显式评估并记录。
@@ -126,6 +132,8 @@ E2E 测试使用 `node:http` 启动 mock 微信服务，覆盖：
 - Webhook 通知触发。
 
 ## 7. 验证流程（Definition of Done）
+
+`.github/workflows/test.yml` 在 Node 20 / 22 上执行相同的构建、类型检查与测试。
 
 ### 步骤 1 — 构建
 
@@ -177,9 +185,10 @@ npm pack --dry-run
 
 - `dist/`
 - `config.yaml.example`
-- `README.md` / `README_zh.md`
+- `README.md` / `README.zh-CN.md`
+- `CHANGELOG.md`
 - `LICENSE`
-- `THIRD_PARTY_NOTICES.md`
+- `THIRD_PARTY_NOTICES`
 - `package.json`
 
 并在临时目录做一次真实安装验证（可选）：
@@ -208,8 +217,11 @@ md2wechat sync
 ## 8. 发布流程
 
 - 版本号只在 `src/cli/package.json` 维护；tag 格式 `vX.Y.Z`。
-- 推送 tag 会触发 `.github/workflows/release.yml`：构建、测试、`npm pack`、创建 GitHub
-  Release。该 workflow 本身不发布 npm。
+- 发布前先在 `CHANGELOG.md` 的 `[Unreleased]` 下整理变更，发版时改为
+  `## [X.Y.Z] - YYYY-MM-DD` 并保留新的 `[Unreleased]` 段落。
+- 推送 tag 会触发 `.github/workflows/release.yml`：构建、测试、`npm pack`、
+  从 `CHANGELOG.md` 截取对应 `## [X.Y.Z]` 段落作为 Release Notes，创建 GitHub
+  Release。找不到版本段落或段落为空时 workflow 直接失败。
 - Release workflow 成功结束后，会自动触发独立的 `.github/workflows/publish.yml`
   （GitHub Actions `workflow_run` 事件），发布同一个 tag。Release 失败或 tag 不是
   `vX.Y.Z` 时不会发布。
@@ -221,8 +233,8 @@ md2wechat sync
   Trusted Publisher：Repository `RolinShmily/md2wechat`、Workflow `publish.yml`、
   Environment 留空。完成配置后，后续 Release 结束即可通过 `publish.yml` 免 token 自动发布。
 - 发布使用 OIDC provenance，不需要长期 `NPM_TOKEN`。
-- 发布前需要把根目录的 `README.md`、`README_zh.md`、`LICENSE`、
-  `THIRD_PARTY_NOTICES.md`、`config.yaml.example` 复制到 `src/cli/`。
+- 发布前需要把根目录的 `README.md`、`README.zh-CN.md`、`CHANGELOG.md`、`LICENSE`、
+  `THIRD_PARTY_NOTICES`、`config.yaml.example` 复制到 `src/cli/`。
   `src/cli` 的 `prepack` 脚本（`scripts/sync-cli-docs.mjs`）会自动完成。
 - 发布后验证：`npm view @rol1n/md2wechat version`、
   `npx @rol1n/md2wechat --help`。

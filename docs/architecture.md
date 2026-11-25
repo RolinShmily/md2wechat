@@ -1,4 +1,7 @@
-# 项目架构（ARCHITECTURE）
+# 架构总览
+
+本文描述 `md2wechat` 的职责边界、包分层与关键数据流。构建与测试见
+[`development.md`](development.md)，配置字段见 [`configuration.md`](configuration.md)。
 
 ## 1. 设计目标与边界
 
